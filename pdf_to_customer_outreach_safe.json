@@ -1,0 +1,297 @@
+{
+  "name": "PDF to Customer Outreach - Human Calls + WhatsApp (SAFE TEMPLATE)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pdf-lead-intake",
+        "responseMode": "lastNode",
+        "options": {
+          "binaryData": true
+        }
+      },
+      "id": "a1111111-1111-4111-8111-111111111111",
+      "name": "PDF Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "pdf-lead-intake-safe"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "a2222222-2222-4222-8222-222222222222",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Indian mobile numbers from PDF text. Review names/number mapping before production.\\nconst text = String($json.text ?? $json.data ?? '');\\nconst matches = [...text.matchAll(/(?:\\\\+?91[\\\\s-]?)?[6-9]\\\\d{9}/g)];\\nconst seen = new Set();\\nconst out=[];\\nfor (const m of matches) {\\n const phone = m[0].replace(/\\\\D/g,'').replace(/^91(?=\\\\d{10}$)/,'');\\n if (phone.length!==10 || seen.has(phone)) continue;\\n seen.add(phone);\\n const idx=m.index ?? 0;\\n const line=text.slice(Math.max(0,text.lastIndexOf('\\\\n',idx-1)+1), text.indexOf('\\\\n',idx)===-1?text.length:text.indexOf('\\\\n',idx));\\n out.push({json:{lead_id:phone,phone:'+91'+phone,source:'pdf_upload',source_line:line.slice(0,240),status:'pending_review',created_at:new Date().toISOString(),consent_status:'unknown'}});\\n}\\nreturn out;"
+      },
+      "id": "a3333333-3333-4333-8333-333333333333",
+      "name": "Parse and Normalize Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "a5555555-5555-4555-8555-555555555555",
+      "name": "Append Leads to Google Sheets (DISABLED)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        980,
+        300
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a8888888-8888-4888-8888-888888888888",
+      "name": "Read Existing Leads and Daily Count (DISABLED)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        720,
+        300
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Requires the Google Sheets lookup node to be enabled and connected.\\nconst existing=$input.all().map(x=>x.json);\\nconst parsed=$('Parse and Normalize Leads').all().map(x=>x.json);\\nconst known=new Set(existing.map(r=>String(r.phone||'').replace(/\\\\s/g,'')));\\nconst today=new Date().toISOString().slice(0,10);\\nconst used=existing.filter(r=>String(r.created_at||'').slice(0,10)===today).length;\\nconst remaining=Math.max(0,50-used);\\nconst batchSeen=new Set();\\nconst fresh=[];\\nfor(const lead of parsed){const phone=String(lead.phone||'');if(!/^\\\\+91[6-9]\\\\d{9}$/.test(phone)||known.has(phone)||batchSeen.has(phone))continue;batchSeen.add(phone);fresh.push({...lead,call_task:'human_call_required',whatsapp_status:'awaiting_approval'});}\\nreturn fresh.slice(0,remaining).map(json=>({json}));"
+      },
+      "id": "a9999999-9999-4999-8999-999999999999",
+      "name": "Persistent Deduplication and Daily Cap",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/vXX.X/REPLACE_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REPLACE_WITH_WHATSAPP_CLOUD_API_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{$json.phone.replace('+','')}}\",\"type\":\"template\",\"template\":{\"name\":\"REPLACE_WITH_APPROVED_TEMPLATE_NAME\",\"language\":{\"code\":\"en\"}}}",
+        "options": {}
+      },
+      "id": "a6666666-6666-4666-8666-666666666666",
+      "name": "WhatsApp Approved Template (DISABLED)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        300
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CallQueue",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "abbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "name": "Create Human Call Tasks (DISABLED)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1200,
+        300
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"message\":\"Intake pipeline reached the response node. Configure and test disabled integrations before production.\"}",
+        "options": {}
+      },
+      "id": "a7777777-7777-4777-8777-777777777777",
+      "name": "Return Intake Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1460,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "PDF Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Parse and Normalize Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and Normalize Leads": {
+      "main": [
+        [
+          {
+            "node": "Read Existing Leads and Daily Count (DISABLED)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Existing Leads and Daily Count (DISABLED)": {
+      "main": [
+        [
+          {
+            "node": "Persistent Deduplication and Daily Cap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persistent Deduplication and Daily Cap": {
+      "main": [
+        [
+          {
+            "node": "Append Leads to Google Sheets (DISABLED)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Leads to Google Sheets (DISABLED)": {
+      "main": [
+        [
+          {
+            "node": "Create Human Call Tasks (DISABLED)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Human Call Tasks (DISABLED)": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Approved Template (DISABLED)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Approved Template (DISABLED)": {
+      "main": [
+        [
+          {
+            "node": "Return Intake Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

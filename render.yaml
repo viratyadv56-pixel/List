@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: leadpilot-dashboard
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: MAX_FILE_MB
+        value: 15
+      - key: N8N_WEBHOOK_URL
+        sync: false
+      - key: N8N_AUTH_HEADER_NAME
+        sync: false
+      - key: N8N_AUTH_HEADER_VALUE
+        sync: false
